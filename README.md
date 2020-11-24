@@ -1,11 +1,14 @@
+
 # FIRES
+
 This repository contains an implementation of the FIRES framework that is introduced in
 
 *Johannes Haug, Martin Pawelczyk, Klaus Broelemann, and Gjergji Kasneci. 2020. Leveraging Model Inherent Variable Importance for Stable Online Feature Selection. In Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining (KDD '20). Association for Computing Machinery, New York, NY, USA, 1478–1502. DOI:https://doi.org/10.1145/3394486.3403200*
 
-Please refer to our paper at KDD '20 when using this implementation. Archived versions of the paper can be found at [ACM](https://dl.acm.org/doi/10.1145/3394486.3403200) and [arXiv](https://arxiv.org/abs/2006.10398). 
+Please refer to our paper at KDD '20 when using this implementation. Archived versions of the paper can be found at [ACM](https://dl.acm.org/doi/10.1145/3394486.3403200) and [arXiv](https://arxiv.org/abs/2006.10398).
 
 ## Apply FIRES to Your Project
+
 The FIRES implementation provided here uses a Probit base model to select features in binary classification settings.
 It can be used as follows:
 
@@ -67,12 +70,14 @@ stream.restart()
 ```
 
 ## Use Your Own Predictive Model
-To use FIRES with your own base model, 
+
+To use FIRES with your own base model,
 you need to substitute the placeholders `### ADD YOUR OWN MODEL HERE ###` in *fires.py* accordingly.
 
 If you have developed a new instantiation of FIRES that is worth sharing with others, feel free to submit a pull request.
 
 ## Related Works
+
 The FIRES framework has been used in
 
-Haug, J., & Kasneci, G. (2020). [Learning Parameter Distributions to Detect Concept Drift in Data Streams.](https://arxiv.org/abs/2010.09388) arXiv preprint arXiv:2010.09388. ([code](https://github.com/haugjo/erics)) 
+Haug, J., & Kasneci, G. (2020). [Learning Parameter Distributions to Detect Concept Drift in Data Streams.](https://arxiv.org/abs/2010.09388) arXiv preprint arXiv:2010.09388. ([code](https://github.com/haugjo/erics))
