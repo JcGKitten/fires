@@ -6,7 +6,7 @@ from sklearn.preprocessing import MinMaxScaler
 
 class FIRES:
     def __init__(self, n_total_ftr, target_values, mu_init=0, sigma_init=1, penalty_s=0.01, penalty_r=0.01, epochs=1,
-                 lr_mu=0.01, lr_sigma=0.01, scale_weights=True, model='probit'):
+                 lr_mu=0.01, lr_sigma=0.01, scale_weights=True, model='probit', number_monte_carlo_samples=10000):
         """
         FIRES: Fast, Interpretable and Robust Evaluation and Selection of features
 
@@ -30,8 +30,8 @@ class FIRES:
 
         self.n_total_ftr = n_total_ftr
         self.target_values = target_values
-        self.mu = np.ones(n_total_ftr) * mu_init
-        self.sigma = np.ones(n_total_ftr) * sigma_init
+        #self.mu = np.ones(n_total_ftr) * mu_init
+        #self.sigma = np.ones(n_total_ftr) * sigma_init
         self.penalty_s = penalty_s
         self.penalty_r = penalty_r
         self.epochs = epochs
@@ -39,6 +39,7 @@ class FIRES:
         self.lr_sigma = lr_sigma
         self.scale_weights = scale_weights
         self.model = model
+        self.n_mc_samples = number_monte_carlo_samples
 
         # Additional model-specific parameters
         self.model_param = {}
@@ -50,6 +51,12 @@ class FIRES:
                 warn('FIRES WARNING: The target variable will be encoded as: {} = -1, {} = 1'.format(self.target_values[0], self.target_values[1]))
             else:
                 raise ValueError('The target variable y must be binary.')
+
+        #Multinominal logit (softmax) model
+        if self.model == 'softmax':
+            self.model_param["no_classes"] = len(target_values)
+            self.mu = np.zeros((n_total_ftr, len(target_values)))
+            self.sigma = np.ones((n_total_ftr, self.model_param["no_classes"]))
 
         # ### ADD YOUR OWN MODEL PARAMETERS HERE #######################################
         # if self.model == 'your_model':
@@ -69,6 +76,10 @@ class FIRES:
         # Update estimates of mu and sigma given the predictive model
         if self.model == 'probit':
             self.__probit(x, y)
+        elif self.model == 'softmax':
+            self.__softmax(x, y)
+        elif self.model == "regression":
+            self.__regression(x, y)
         # ### ADD YOUR OWN MODEL HERE ##################################################
         # elif self.model == 'your_model':
         #    self.__yourModel(x, y)
@@ -124,6 +135,77 @@ class FIRES:
             except TypeError as e:
                 raise TypeError('All features must be a numeric data type.') from e
 
+
+    def __softmax(self, x, y): # needs self in model
+    """
+        Update the distribution parameters mu and sigma by optimizing them in terms of the (log) likelihood.
+        Here we assume a Bernoulli distributed target variable. We use a Probit model as our base model.
+        This corresponds to the FIRES-GLM model in the paper.
+
+        :param x: (np.ndarray) Batch of observations (numeric values only, consider normalizing data for better results)
+        :param y: (np.ndarray) Batch of labels: type integer e.g. 1,2,3,4 usw
+     """
+
+    for epoch in range(self.epochs): #changed to self.epoch in model
+        # Shuffle the observations
+        random_idx = np.random.permutation(len(y))
+        x = x[random_idx]
+        y = y[random_idx]
+
+        for idx, label in enumerate(y):
+            current_x = x[idx] 
+            try:
+                # l number of samples, j features, c classes
+                # create 3d array with all r for current observation for multiple observation calculation we would need 4d array
+                # r^cl_j = r[l, j, c] lxjxc
+                r = np.random.randn(self.n_mc_samples, self.n_total_ftr, self.model_param["no_classes"])
+                # we only change the psi for the actuall given class still need all classes of course
+                # r = np.random.randn(monte_carlo, n_total_ftr)
+                print(r.shape)
+                # calculate thetas for all samples and classes theta^cl_jt = theta[l,j,c]
+                # lxjxc
+                theta = r * sigma + mu
+                print(theta.shape)
+                #calculate all the etas
+                eta = np.einsum("ljc,j->ljc", theta, current_x) # multiply all ftr_cols with given ftr_vector x
+                eta = np.einsum("ljc->lc", eta) #sum up all theta^cl_j * x_tj so we got l samples for all c classes
+                eta = np.exp(eta) # we only need them exp
+                eta_sum = np.einsum("lc->l", eta) #sum up etas for the l samples
+                print(eta.shape)
+                print(eta_sum.shape)
+                #calculate softmax only for observed class
+                #observation_etas = eta[:,y] with more observations we need transposition
+                obs_eta = eta[:,y]
+                softmax_lh = obs_eta / eta_sum #lxo o is amount of given observations
+                print(softmax_lh.shape)
+                #marginal = np.einsum("lo->o", softmax_lh) / monte_carlo # 1xy
+                marginal = np.sum(softmax_lh) / self.n_mc_samples
+                print(marginal.shape)
+                print(marginal)
+                # calculate derivatives nabla_mu, nabla_sigma must be handled better
+                #first calculate softmax dtheta
+                # x_eta means observations x times the beloning etas
+                #x_eta = np.einsum("oj,ol->ojl", x, observation_etas)
+                #softmax_derivative = np.einsum("ojl,ol->ojl", x_eta, (eta_sum-observation_etas))/(eta_sum**2)
+                x_eta = np.einsum("j,l->jl", current_x, obs_eta)
+                softmax_derivative = np.einsum("jl,l->jl", x_eta, (eta_sum - obs_eta)) / (eta_sum**2)
+                print(softmax_derivative.shape)
+                nabla_mu = np.einsum("jl->j", softmax_derivative) / self.n_mc_samples
+                print(nabla_mu.shape)
+                r_jc = r[:,:,y].T
+                print(r_jc.shape)
+                nabla_sigma = np.einsum("jl->j", softmax_derivative * r_jc) / self.n_mc_samples
+                print(nabla_sigma.shape)
+                # Update parameters
+                self.mu[:,y] += self.lr_mu * (nabla_mu / marginal)
+                self.sigma[:,y] += self.lr_sigma * (nabla_sigma / marginal)
+                    
+
+            except TypeError as e:
+                raise TypeError('All features must be a numeric data type.') from e
+
+    def __regression(self, x, y):
+        return
     '''
     # ### ADD YOUR OWN MODEL HERE ##################################################
     def __yourModel(self):
@@ -150,9 +232,13 @@ class FIRES:
         :return: feature weights
         :rtype np.ndarray
         """
+        mu, sigma = self.mu, self.sigma
+        if len(mu.shape) == 2: # multinominal case
+            mu = np.mean(mu, axis=1)
+            sigma = np.mean(sigma, axis=1)
 
         # Compute optimal weights
-        weights = (self.mu**2 - self.penalty_s * self.sigma**2) / (2 * self.penalty_r)
+        weights = (mu**2 - self.penalty_s * sigma**2) / (2 * self.penalty_r)
 
         if self.scale_weights:  # Scale weights to [0,1]
             weights = MinMaxScaler().fit_transform(weights.reshape(-1, 1)).flatten()
