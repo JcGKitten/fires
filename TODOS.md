@@ -8,11 +8,13 @@
 - [] test for loop over observations
     - [] np.nditer()???
     - [] check what happens if you only give one obs
+    - [x] do it before softmax call maybe
 - [x] rewrite np.einsum indexes so they match l, j and c
-- [] bring softmax to fires
+- [x] bring softmax to fires
 - [] test calculating weights
     - [x] bring mu and sigma to one vector befor calculating weights
 - [] write explanation page
+- [x] class probs to fires
 
 ### Regression
 - [] multiple observations
