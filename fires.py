@@ -34,8 +34,6 @@ class FIRES:
 
         self.n_total_ftr = n_total_ftr
         self.target_values = target_values
-        # self.mu = np.ones(n_total_ftr) * mu_init
-        # self.sigma = np.ones(n_total_ftr) * sigma_init
         self.penalty_s = penalty_s
         self.penalty_r = penalty_r
         self.epochs = epochs
@@ -51,6 +49,8 @@ class FIRES:
         # Probit model
         if self.model == 'probit' and tuple(target_values) != (-1, 1):
             if len(np.unique(target_values)) == 2:
+                self.mu = np.ones(n_total_ftr) * mu_init
+                self.sigma = np.ones(n_total_ftr) * sigma_init
                 # Indicates that we need to encode the target variable into {-1,1}
                 self.model_param['probit'] = True
                 warn('FIRES WARNING: The target variable will be encoded as: {} = -1, {} = 1'.format(
@@ -61,8 +61,8 @@ class FIRES:
         # Multinominal logit (softmax) model
         if self.model == 'softmax':
             self.model_param["n_classes"] = len(target_values)
-            self.mu = np.zeros((n_total_ftr, self.model_param["n_classes"]))
-            self.sigma = np.ones((n_total_ftr, self.model_param["n_classes"]))
+            self.mu = np.ones((n_total_ftr, self.model_param["n_classes"]))*mu_init #maybe check for scale of mu init
+            self.sigma = np.ones((n_total_ftr, self.model_param["n_classes"]))*sigma_init
             if class_probabilities != None:
                 if sum(class_probabilities) != 1:
                     raise ValueError("Class probs don't sum up to 1")
@@ -72,7 +72,9 @@ class FIRES:
                 else:
                     self.model_param["class_probs"] = True
                     self.class_probabilies = class_probabilities
-
+        if self.model == "regression":
+            self.mu = np.ones(n_total_ftr) * mu_init
+            self.sigma = np.ones(n_total_ftr) * sigma_init
         # ### ADD YOUR OWN MODEL PARAMETERS HERE #######################################
         # if self.model == 'your_model':
         #    self.model_param['your_model'] = {}
@@ -163,16 +165,15 @@ class FIRES:
                     'All features must be a numeric data type.') from e
 
     def __softmax(self, x, y):  # needs self in model
-    """
+        """
         Update the distribution parameters mu and sigma by optimizing them in terms of the (log) likelihood.
-        Here we assume a Bernoulli distributed target variable. We use a Probit model as our base model.
-        This corresponds to the FIRES-GLM model in the paper.
+        Here we assume a multinominal distributed target variable. We use a Multinominal model as our base model.
+        
 
         :param x: (np.ndarray) Batch of observations (numeric values only, consider normalizing data for better results)
-        :param y: (np.ndarray) Batch of labels: type integer e.g. 1,2,3,4 usw
-     """
-
-    for epoch in range(self.epochs):  # changed to self.epoch in model
+        :param y: (np.ndarray) Batch of labels: type integer e.g. 1,2,3,4 etc.
+        """
+        for epoch in range(self.epochs):  # changed to self.epoch in model
 
            try:
                 # l number of samples, j features, c classes
@@ -232,7 +233,44 @@ class FIRES:
                     'All features must be a numeric data type.') from e
 
     def __regression(self, x, y):
-        return
+       """
+        Update the distribution parameters mu and sigma by optimizing them in terms of the likelihood.
+        Here we assume a normal distributed target variable. We use a identity model as our base model.
+        
+        :param x: (np.ndarray) Batch of observations (numeric values only, consider normalizing data for better results)
+        :param y: (np.ndarray) Batch of labels: type float
+     """
+
+     for epoch in range(epochs): #changed to self.epoch in model
+         # Shuffle the observations
+         n_obs = len(y) # problem if only one is given, handle later try catch or so
+         random_idx = np.random.permutation(len(y))
+         x = x[random_idx]
+         y = y[random_idx]
+
+         
+         # Iterative update of mu and sigma
+         try:
+             # has shape o: observations, l: samples, j: features 
+             r = np.random.randn(n_obs, self.n_mc_samples, self.n_total_ftr)
+             print("R shape: {}".format(r.shape))
+             # calculate thetas for all samples and observations
+             theta = np.einsum("olj,j->olj",r, self.sigma) + self.mu
+             
+             # calculate marginal likelihood shape o
+             marginal = np.einsum("olj,oj->olj",theta, x) #theta *x
+             marginal = np.einsum("olj->o", marginal) / self.n_mc_samples # sum over l and j / n_mc_samples
+             print("Marginal shape: {}".format(marginal.shape))
+
+             # calculate derivatives
+             nabla_mu = x # shape oxj
+             # 'ij->i' sum over all rows
+             nabla_sigma = x * (np.einsum("olj->oj", r) / self.n_mc_samples) #shape oxj
+            
+             #update mu and sigma
+             self.mu += self.lr_mu * np.mean(nabla_mu.T / marginal, axis=1)
+             self.sigma += self.lr_sigma * np.mean(nabla_sigma.T / marginal, axis=1)
+
     '''
     # ### ADD YOUR OWN MODEL HERE ##################################################
     def __yourModel(self):
