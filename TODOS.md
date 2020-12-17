@@ -17,6 +17,7 @@
 - [] write explanation page
 - [x] class probs to fires
 - [] mu_init/ sigma_init?
+- is shuffle even necarrary?
 
 ### Regression
 - [x] multiple observations
