@@ -80,7 +80,7 @@ class FIRES:
         #    self.model_param['your_model'] = {}
         ################################################################################
 
-    def weigh_features(self, x, y):
+    def weigh_features(self, x, y):        
         """
         Compute feature weights, given a batch of observations and corresponding labels
 
@@ -96,6 +96,7 @@ class FIRES:
 
         elif self.model == 'softmax':
             # TODO: handle case with only one given obs better
+            
             if y.shape() == ():
                 self.__softmax(x, y)
             else:
@@ -229,8 +230,7 @@ class FIRES:
                 self.sigma[:, y] += self.lr_sigma * (nabla_sigma / marginal)
 
             except TypeError as e:
-                raise TypeError(
-                    'All features must be a numeric data type.') from e
+                raise TypeError('All features must be a numeric data type.') from e
 
     def __regression(self, x, y):
        """
