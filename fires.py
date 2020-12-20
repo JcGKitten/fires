@@ -61,8 +61,11 @@ class FIRES:
         # Multinominal logit (softmax) model
         if self.model == 'softmax':
             self.model_param["n_classes"] = len(target_values)
-            self.mu = np.ones((n_total_ftr, self.model_param["n_classes"]))*mu_init #maybe check for scale of mu init
-            self.sigma = np.ones((n_total_ftr, self.model_param["n_classes"]))*sigma_init
+            # maybe check for scale of mu init
+            self.mu = np.ones(
+                (n_total_ftr, self.model_param["n_classes"]))*mu_init
+            self.sigma = np.ones(
+                (n_total_ftr, self.model_param["n_classes"]))*sigma_init
             if class_probabilities != None:
                 if sum(class_probabilities) != 1:
                     raise ValueError("Class probs don't sum up to 1")
@@ -71,7 +74,7 @@ class FIRES:
                         "Length of target_values and class_probilities don't match")
                 else:
                     self.model_param["class_probs"] = True
-                    self.class_probabilies = class_probabilities
+                    self.class_probabilities = class_probabilities
         if self.model == "regression":
             self.mu = np.ones(n_total_ftr) * mu_init
             self.sigma = np.ones(n_total_ftr) * sigma_init
@@ -80,7 +83,7 @@ class FIRES:
         #    self.model_param['your_model'] = {}
         ################################################################################
 
-    def weigh_features(self, x, y):        
+    def weigh_features(self, x, y):
         """
         Compute feature weights, given a batch of observations and corresponding labels
 
@@ -93,10 +96,8 @@ class FIRES:
         # Update estimates of mu and sigma given the predictive model
         if self.model == 'probit':
             self.__probit(x, y)
-
         elif self.model == 'softmax':
-            # TODO: handle case with only one given obs better
-            
+            #TODO: handle case with only one given obs better
             if y.shape() == ():
                 self.__softmax(x, y)
             else:
@@ -104,6 +105,7 @@ class FIRES:
                     self.__softmax(x, y)
 
         elif self.model == "regression":
+            #TODO: condition rewrite
             if y.shape == ():
                 self.__regression(x, y)
         # ### ADD YOUR OWN MODEL HERE ##################################################
@@ -169,14 +171,14 @@ class FIRES:
         """
         Update the distribution parameters mu and sigma by optimizing them in terms of the (log) likelihood.
         Here we assume a multinominal distributed target variable. We use a Multinominal model as our base model.
-        
+
 
         :param x: (np.ndarray) Batch of observations (numeric values only, consider normalizing data for better results)
         :param y: (np.ndarray) Batch of labels: type integer e.g. 1,2,3,4 etc.
         """
         for epoch in range(self.epochs):  # changed to self.epoch in model
 
-           try:
+            try:
                 # l number of samples, j features, c classes
                 # create 3d array with all r for current observation for multiple observation calculation we would need 4d array
                 # r^cl_j = r[l, j, c] lxjxc
@@ -187,11 +189,11 @@ class FIRES:
                 print(r.shape)
                 # calculate thetas for all samples and classes theta^cl_jt = theta[l,j,c]
                 # lxjxc
-                theta = r * sigma + mu
+                theta = r * self.sigma + self.mu
                 print(theta.shape)
                 # calculate all the etas
                 # multiply all ftr_cols with given ftr_vector x
-                eta = np.einsum("ljc,j->ljc", theta, current_x)
+                eta = np.einsum("ljc,j->ljc", theta, x)
                 # sum up all theta^cl_j * x_tj so we got l samples for all c classes
                 eta = np.einsum("ljc->lc", eta)
                 eta = np.exp(eta)  # we only need them exp
@@ -213,7 +215,7 @@ class FIRES:
                 # x_eta means observations x times the beloning etas
                 # x_eta = np.einsum("oj,ol->ojl", x, observation_etas)
                 # softmax_derivative = np.einsum("ojl,ol->ojl", x_eta, (eta_sum-observation_etas))/(eta_sum**2)
-                x_eta = np.einsum("j,l->jl", current_x, obs_eta)
+                x_eta = np.einsum("j,l->jl", x, obs_eta)
                 softmax_derivative = np.einsum(
                     "jl,l->jl", x_eta, (eta_sum - obs_eta)) / (eta_sum**2)
                 print(softmax_derivative.shape)
@@ -230,49 +232,56 @@ class FIRES:
                 self.sigma[:, y] += self.lr_sigma * (nabla_sigma / marginal)
 
             except TypeError as e:
-                raise TypeError('All features must be a numeric data type.') from e
+                raise TypeError(
+                    'All features must be a numeric data type.') from e
 
     def __regression(self, x, y):
-       """
-        Update the distribution parameters mu and sigma by optimizing them in terms of the likelihood.
-        Here we assume a normal distributed target variable. We use a identity model as our base model.
-        
+        """
+         Update the distribution parameters mu and sigma by optimizing them in terms of the likelihood.
+         Here we assume a normal distributed target variable. We use a identity model as our base model.
+
         :param x: (np.ndarray) Batch of observations (numeric values only, consider normalizing data for better results)
         :param y: (np.ndarray) Batch of labels: type float
-     """
+        """
 
-     for epoch in range(epochs): #changed to self.epoch in model
-         # Shuffle the observations
-         n_obs = len(y) # problem if only one is given, handle later try catch or so
-         random_idx = np.random.permutation(len(y))
-         x = x[random_idx]
-         y = y[random_idx]
+        for epoch in range(self.epochs):
+            # Shuffle the observations
+            # problem if only one is given, handle later try catch or so
+            n_obs = len(y)
+            random_idx = np.random.permutation(len(y))
+            x = x[random_idx]
+            y = y[random_idx]
 
-         
-         # Iterative update of mu and sigma
-         try:
-             # has shape o: observations, l: samples, j: features 
-             r = np.random.randn(n_obs, self.n_mc_samples, self.n_total_ftr)
-             print("R shape: {}".format(r.shape))
-             # calculate thetas for all samples and observations
-             theta = np.einsum("olj,j->olj",r, self.sigma) + self.mu
-             
-             # calculate marginal likelihood shape o
-             marginal = np.einsum("olj,oj->olj",theta, x) #theta *x
-             marginal = np.einsum("olj->o", marginal) / self.n_mc_samples # sum over l and j / n_mc_samples
-             print("Marginal shape: {}".format(marginal.shape))
+            # Iterative update of mu and sigma
+            try:
+                # has shape o: observations, l: samples, j: features
+                r = np.random.randn(n_obs, self.n_mc_samples, self.n_total_ftr)
+                print("R shape: {}".format(r.shape))
+                # calculate thetas for all samples and observations
+                theta = np.einsum("olj,j->olj", r, self.sigma) + self.mu
 
-             # calculate derivatives
-             nabla_mu = x # shape oxj
-             # 'ij->i' sum over all rows
-             nabla_sigma = x * (np.einsum("olj->oj", r) / self.n_mc_samples) #shape oxj
-            
-             #update mu and sigma
-             self.mu += self.lr_mu * np.mean(nabla_mu.T / marginal, axis=1)
-             self.sigma += self.lr_sigma * np.mean(nabla_sigma.T / marginal, axis=1)
+                # calculate marginal likelihood shape o
+                marginal = np.einsum("olj,oj->olj", theta, x)  # theta *x
+                # sum over l and j / n_mc_samples
+                marginal = np.einsum("olj->o", marginal) / self.n_mc_samples
+                print("Marginal shape: {}".format(marginal.shape))
+
+                # calculate derivatives
+                nabla_mu = x  # shape oxj
+                # 'ij->i' sum over all rows
+                nabla_sigma = x * (np.einsum("olj->oj", r) /
+                                   self.n_mc_samples)  # shape oxj
+
+                # update mu and sigma
+                self.mu += self.lr_mu * np.mean(nabla_mu.T / marginal, axis=1)
+                self.sigma += self.lr_sigma * \
+                    np.mean(nabla_sigma.T / marginal, axis=1)
+            except:
+                #TODO: handle errors
+                print('failed')
 
     '''
-    # ### ADD YOUR OWN MODEL HERE ##################################################
+    # ### ADD YOUR OWN MODEL HERE #################################################
     def __yourModel(self):
         """ 
         Your own model description.
@@ -300,9 +309,10 @@ class FIRES:
         mu, sigma = self.mu, self.sigma
         if len(mu.shape) == 2:  # multinominal case
             if self.model_param["class_probs"]:
-                mu = np.sum(mu * self.class_probabilies, axis=1)
+                # TODO declare class_probabilit
+                mu = np.sum(mu * self.class_probabilities, axis=1)
                 sigma = np.sum(sigma * self.class_probabilities, axis=1)
-            else:    
+            else:
                 mu = np.mean(mu, axis=1)
                 sigma = np.mean(sigma, axis=1)
 
@@ -313,3 +323,4 @@ class FIRES:
             weights = MinMaxScaler().fit_transform(weights.reshape(-1, 1)).flatten()
 
         return weights
+    

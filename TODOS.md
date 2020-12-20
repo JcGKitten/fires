@@ -24,8 +24,17 @@
 - [] write explanation page
 - [] how is be taken responsibility for the target y???
 - [] handle case when only one obs is given
+
+### Common tasks
+- [] find datasets
+- [] try to use binary FIRES
+
 ### Other Implementions
 #### OFS
+- [] built multiclass perceptron
 #### OFSGr
 #### FSDS
+- [] find implementation
 #### EFS
+- [] find implementation 
+- [] multiclass winnow
