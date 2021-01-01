@@ -97,7 +97,13 @@ class FIRES:
         if self.model == 'probit':
             self.__probit(x, y)
         elif self.model == 'softmax':
-            self.__softmax(x, y)
+            #TODO: handle case with only one given obs better
+            if y.shape == ():
+                self.__softmax(x, y)
+            else:
+                for idx, label in enumerate(y):
+                    self.__softmax(x, y)
+
         elif self.model == "regression":
             #TODO: condition rewrite
             if y.shape == ():
@@ -110,7 +116,7 @@ class FIRES:
             raise NotImplementedError('The given model name does not exist')
 
         # Limit sigma to range [0, inf]
-        if np.sum(self.sigma < 0) > 0:
+        if sum(n < 0 for n in self.sigma) > 0:
             self.sigma[self.sigma < 0] = 0
             warn(
                 'Sigma has automatically been rescaled to [0, inf], because it contained negative values.')
@@ -161,7 +167,7 @@ class FIRES:
                 raise TypeError(
                     'All features must be a numeric data type.') from e
 
-    def __softmax(self, x, y):
+    def __softmax(self, x, y):  # needs self in model
         """
         Update the distribution parameters mu and sigma by optimizing them in terms of the (log) likelihood.
         Here we assume a multinominal distributed target variable. We use a Multinominal model as our base model.
@@ -170,96 +176,64 @@ class FIRES:
         :param x: (np.ndarray) Batch of observations (numeric values only, consider normalizing data for better results)
         :param y: (np.ndarray) Batch of labels: type integer e.g. 1,2,3,4 etc.
         """
-        print("{} {}".format(len(y), len(x.shape)))
-        if len(x.shape) != 2:
-            # if only one observation array is given, reshape it
-            # only one ftr should not happen...
-            x = x.reshape(1,len(x))
-    
-        observed_classes = np.unique(y)
+        for epoch in range(self.epochs):  # changed to self.epoch in model
 
-        for obs_class in observed_classes:
-            # fix access
-            observations_index = np.where(y == obs_class)[0]
-            #print(observations_index)
-            x_obs = x[observations_index]
-            #print(x_obs)
-            n_obs = len(x_obs)
-            #print(n_obs)
-            print("obs_class: {}, n obs: {}".format(obs_class, n_obs))
+            try:
+                # l number of samples, j features, c classes
+                # create 3d array with all r for current observation for multiple observation calculation we would need 4d array
+                # r^cl_j = r[l, j, c] lxjxc
+                r = np.random.randn(
+                    self.n_mc_samples, self.n_total_ftr, self.model_param["no_classes"])
+                # we only change the psi for the actuall given class still need all classes of course
+                # r = np.random.randn(monte_carlo, n_total_ftr)
+                print(r.shape)
+                # calculate thetas for all samples and classes theta^cl_jt = theta[l,j,c]
+                # lxjxc
+                theta = r * self.sigma + self.mu
+                print(theta.shape)
+                # calculate all the etas
+                # multiply all ftr_cols with given ftr_vector x
+                eta = np.einsum("ljc,j->ljc", theta, x)
+                # sum up all theta^cl_j * x_tj so we got l samples for all c classes
+                eta = np.einsum("ljc->lc", eta)
+                eta = np.exp(eta)  # we only need them exp
+                # sum up etas for the l samples
+                eta_sum = np.einsum("lc->l", eta)
+                print(eta.shape)
+                print(eta_sum.shape)
+                # calculate softmax only for observed class
+                # observation_etas = eta[:,y] with more observations we need transposition
+                obs_eta = eta[:, y]
+                softmax_lh = obs_eta / eta_sum  # lxo o is amount of given observations
+                print(softmax_lh.shape)
+                # marginal = np.einsum("lo->o", softmax_lh) / monte_carlo # 1xy
+                marginal = np.sum(softmax_lh) / self.n_mc_samples
+                print(marginal.shape)
+                print(marginal)
+                # calculate derivatives nabla_mu, nabla_sigma must be handled better
+                # first calculate softmax dtheta
+                # x_eta means observations x times the beloning etas
+                # x_eta = np.einsum("oj,ol->ojl", x, observation_etas)
+                # softmax_derivative = np.einsum("ojl,ol->ojl", x_eta, (eta_sum-observation_etas))/(eta_sum**2)
+                x_eta = np.einsum("j,l->jl", x, obs_eta)
+                softmax_derivative = np.einsum(
+                    "jl,l->jl", x_eta, (eta_sum - obs_eta)) / (eta_sum**2)
+                print(softmax_derivative.shape)
+                nabla_mu = np.einsum(
+                    "jl->j", softmax_derivative) / self.n_mc_samples
+                print(nabla_mu.shape)
+                r_jc = r[:, :, y].T
+                print(r_jc.shape)
+                nabla_sigma = np.einsum(
+                    "jl->j", softmax_derivative * r_jc) / self.n_mc_samples
+                print(nabla_sigma.shape)
+                # Update parameters
+                self.mu[:, y] += self.lr_mu * (nabla_mu / marginal)
+                self.sigma[:, y] += self.lr_sigma * (nabla_sigma / marginal)
 
-            for epoch in range(self.epochs): #changed to self.epoch in model
-                    
-                    # Iterative update of mu and sigma
-                    try:
-                        # o number of obs, l number of samples, j features, c classes
-                        # create 3d array with all r for current observation for multiple observation calculation we would need 4d array
-                        # r^cl_j = r[l, j, c] lxjxc
-                        r = np.random.randn(n_obs, self.n_mc_samples, self.n_total_ftr, self.model_param["n_classes"])
-                        #r = np.array([[[-0.558, 1.555], [0.325, -0.726], [0.347,-0.159]],
-                        #              [[-0.955, 0.283], [0.115,-1.637], [-0.516,0.161]]])  
-                        #print(r)
-                        # we only change the psi for the actuall given class still need all classes of course
-                        # r = np.random.randn(monte_carlo, n_total_ftr)
-
-                        #print(r.shape)
-                        # calculate thetas for all samples and classes theta^cl_jt = theta[l,j,c]
-                        # oxlxjxc
-                        theta = r * self.sigma + self.mu
-                        #print(theta.shape)
-                        #print(theta)
-                        #calculate all the etas
-                        eta = np.einsum("oljc,oj->oljc", theta, x_obs) # multiply all ftr_cols with given ftr_vector x
-                        #print('theta * x:')
-                        #print(eta)
-                        eta = np.einsum("oljc->olc", eta) #sum up all theta^cl_j * x_tj so we got l samples for all c classes
-                        #print("eta:")
-                        #print(eta)
-                        eta = np.exp(eta) # we only need them exp
-                        #print("eta_exp:")
-                        #print(eta)
-                        #print(eta.shape)
-                        eta_sum = np.einsum("olc->ol", eta) #sum up etas for the l samples
-                        #print("eta_sum:")
-                        #print(eta_sum)
-                        #print(eta_sum.shape)
-                        #calculate softmax only for observed class
-                        #observation_etas = eta[:,y] with more observations we need transposition
-                        obs_eta = eta[:,:,obs_class]
-                        #print("Obs_eta shape: {}".format(obs_eta.shape))
-                        softmax_lh = obs_eta / eta_sum # 
-                        #print(softmax_lh)
-                        #print(softmax_lh.shape) #should be oxl
-                        #marginal = np.einsum("lo->o", softmax_lh) / monte_carlo # 1xy
-                        marginal = np.einsum("ol->o", softmax_lh) / self.n_mc_samples
-                        #print(marginal.shape) #should be o
-                        #print(marginal)
-                        # calculate derivatives nabla_mu, nabla_sigma must be handled better
-
-                        #first calculate softmax dtheta
-                        # x_eta means observations x times the beloning etas
-                        x_eta = np.einsum("oj,ol->olj", x_obs, obs_eta)
-                        #print(x_eta)
-
-                        softmax_derivative = np.einsum("olj,ol->olj", x_eta, (eta_sum - obs_eta))
-                        softmax_derivative = np.einsum("olj->jol", softmax_derivative) /  eta_sum**2
-                        softmax_derivative = np.einsum("jol->olj", softmax_derivative)
-                        #print(softmax_derivative.shape)
-                        #print(softmax_derivative)
-                        nabla_mu = np.einsum("olj->oj", softmax_derivative) / self.n_mc_samples
-                        #print(nabla_mu.shape) #oj
-                        #print(nabla_mu)
-                        r_jc = r[:,:,:,obs_class]
-                        #print(r_jc.shape)
-                        nabla_sigma = np.einsum("olj->oj", softmax_derivative * r_jc) / self.n_mc_samples
-                        #print(nabla_sigma.shape) #oj
-                        # Update parameters
-                        self.mu[:,obs_class] += self.lr_mu * np.einsum("jo->j", (nabla_mu.T / marginal))
-                        self.sigma[:,obs_class] += self.lr_sigma * np.einsum("jo->j",(nabla_sigma.T / marginal))
-                        
-
-                    except TypeError as e:
-                            raise TypeError('All features must be a numeric data type.') from e
+            except TypeError as e:
+                raise TypeError(
+                    'All features must be a numeric data type.') from e
 
     def __regression(self, x, y):
         """
@@ -334,7 +308,8 @@ class FIRES:
         """
         mu, sigma = self.mu, self.sigma
         if len(mu.shape) == 2:  # multinominal case
-            if "class_probs" in self.model_param:
+            if self.model_param["class_probs"]:
+                # TODO declare class_probabilit
                 mu = np.sum(mu * self.class_probabilities, axis=1)
                 sigma = np.sum(sigma * self.class_probabilities, axis=1)
             else:
