@@ -99,9 +99,7 @@ class FIRES:
         elif self.model == 'softmax':
             self.__softmax(x, y)
         elif self.model == "regression":
-            #TODO: condition rewrite
-            if y.shape == ():
-                self.__regression(x, y)
+            self.__regression(x, y)
         # ### ADD YOUR OWN MODEL HERE ##################################################
         # elif self.model == 'your_model':
         #    self.__yourModel(x, y)
@@ -170,7 +168,7 @@ class FIRES:
         :param x: (np.ndarray) Batch of observations (numeric values only, consider normalizing data for better results)
         :param y: (np.ndarray) Batch of labels: type integer e.g. 1,2,3,4 etc.
         """
-        print("{} {}".format(len(y), len(x.shape)))
+        
         if len(x.shape) != 2:
             # if only one observation array is given, reshape it
             # only one ftr should not happen...
@@ -273,16 +271,20 @@ class FIRES:
         for epoch in range(self.epochs):
             # Shuffle the observations
             # problem if only one is given, handle later try catch or so
-            n_obs = len(y)
-            random_idx = np.random.permutation(len(y))
-            x = x[random_idx]
-            y = y[random_idx]
+            try:
+                n_obs = len(y)
+                random_idx = np.random.permutation(len(y))
+                x = x[random_idx]
+                y = y[random_idx]
+            except:
+                n_obs = 1
+                x.reshape(1, len(x))
 
             # Iterative update of mu and sigma
             try:
                 # has shape o: observations, l: samples, j: features
                 r = np.random.randn(n_obs, self.n_mc_samples, self.n_total_ftr)
-                print("R shape: {}".format(r.shape))
+                #print("R shape: {}".format(r.shape))
                 # calculate thetas for all samples and observations
                 theta = np.einsum("olj,j->olj", r, self.sigma) + self.mu
 
@@ -290,7 +292,7 @@ class FIRES:
                 marginal = np.einsum("olj,oj->olj", theta, x)  # theta *x
                 # sum over l and j / n_mc_samples
                 marginal = np.einsum("olj->o", marginal) / self.n_mc_samples
-                print("Marginal shape: {}".format(marginal.shape))
+                #print("Marginal shape: {}".format(marginal.shape))
 
                 # calculate derivatives
                 nabla_mu = x  # shape oxj
