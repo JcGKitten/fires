@@ -166,94 +166,88 @@ class FIRES:
 
 
         :param x: (np.ndarray) Batch of observations (numeric values only, consider normalizing data for better results)
-        :param y: (np.ndarray) Batch of labels: type integer e.g. 1,2,3,4 etc.
+        :param y: (np.ndarray) Batch of labels: type integer e.g. 0,1,2,3,4 etc.
         """
         
         if len(x.shape) != 2:
-            # if only one observation array is given, reshape it
-            # only one ftr should not happen...
             x = x.reshape(1,len(x))
     
         observed_classes = np.unique(y)
 
         for obs_class in observed_classes:
-            # fix access
             observations_index = np.where(y == obs_class)[0]
-            #print(observations_index)
             x_obs = x[observations_index]
-            #print(x_obs)
             n_obs = len(x_obs)
-            #print(n_obs)
-            print("obs_class: {}, n obs: {}".format(obs_class, n_obs))
+            #print("obs_class: {}, n obs: {}".format(obs_class, n_obs))
 
-            for epoch in range(self.epochs): #changed to self.epoch in model
+            for epoch in range(self.epochs):
                     
                     # Iterative update of mu and sigma
                     try:
-                        # o number of obs, l number of samples, j features, c classes
-                        # create 3d array with all r for current observation for multiple observation calculation we would need 4d array
-                        # r^cl_j = r[l, j, c] lxjxc
-                        r = np.random.randn(n_obs, self.n_mc_samples, self.n_total_ftr, self.model_param["n_classes"])
-                        #r = np.array([[[-0.558, 1.555], [0.325, -0.726], [0.347,-0.159]],
-                        #              [[-0.955, 0.283], [0.115,-1.637], [-0.516,0.161]]])  
-                        #print(r)
-                        # we only change the psi for the actuall given class still need all classes of course
-                        # r = np.random.randn(monte_carlo, n_total_ftr)
+                        # o number of obs, l number of samples, j features,
+                        # c classes
+                        
+                        # r shape: oxlxjxc
+                        r = np.random.randn(n_obs, self.n_mc_samples,
+                                            self.n_total_ftr,
+                                            self.model_param["n_classes"])
 
-                        #print(r.shape)
-                        # calculate thetas for all samples and classes theta^cl_jt = theta[l,j,c]
-                        # oxlxjxc
+                        # theta shape: oxlxjxc
                         theta = r * self.sigma + self.mu
-                        #print(theta.shape)
-                        #print(theta)
-                        #calculate all the etas
-                        eta = np.einsum("oljc,oj->oljc", theta, x_obs) # multiply all ftr_cols with given ftr_vector x
-                        #print('theta * x:')
-                        #print(eta)
-                        eta = np.einsum("oljc->olc", eta) #sum up all theta^cl_j * x_tj so we got l samples for all c classes
-                        #print("eta:")
-                        #print(eta)
+
+                        # eta shape: oxlxc
+                        # multiply all ftr_cols with given ftr_vector x
+                        eta = np.einsum("oljc,oj->oljc", theta, x_obs) 
+                        # sum up all theta^cl_j * x_tj so we got l samples
+                        # for all c classes
+                        eta = np.einsum("oljc->olc", eta) 
+                        
                         eta = np.exp(eta) # we only need them exp
-                        #print("eta_exp:")
-                        #print(eta)
-                        #print(eta.shape)
-                        eta_sum = np.einsum("olc->ol", eta) #sum up etas for the l samples
-                        #print("eta_sum:")
-                        #print(eta_sum)
-                        #print(eta_sum.shape)
-                        #calculate softmax only for observed class
-                        #observation_etas = eta[:,y] with more observations we need transposition
+
+                        # eta_sum shape: oxl
+                        eta_sum = np.einsum("olc->ol", eta)
+                        
+                        # calculate softmax only for observed class
+                        # obs_eta shape: oxl
                         obs_eta = eta[:,:,obs_class]
-                        #print("Obs_eta shape: {}".format(obs_eta.shape))
+                        
+                        # softmax_lh shape: oxl
                         softmax_lh = obs_eta / eta_sum # 
-                        #print(softmax_lh)
-                        #print(softmax_lh.shape) #should be oxl
-                        #marginal = np.einsum("lo->o", softmax_lh) / monte_carlo # 1xy
-                        marginal = np.einsum("ol->o", softmax_lh) / self.n_mc_samples
-                        #print(marginal.shape) #should be o
-                        #print(marginal)
-                        # calculate derivatives nabla_mu, nabla_sigma must be handled better
+                        
+                        # marginal shape: o
+                        marginal = np.einsum("ol->o", softmax_lh) / \
+                                   self.n_mc_samples
 
-                        #first calculate softmax dtheta
-                        # x_eta means observations x times the beloning etas
+
+                        # calculate softmax derivative to theta
+                        
+                        # x_eta shape: oxlxj
                         x_eta = np.einsum("oj,ol->olj", x_obs, obs_eta)
-                        #print(x_eta)
+                        
 
-                        softmax_derivative = np.einsum("olj,ol->olj", x_eta, (eta_sum - obs_eta))
-                        softmax_derivative = np.einsum("olj->jol", softmax_derivative) /  eta_sum**2
-                        softmax_derivative = np.einsum("jol->olj", softmax_derivative)
-                        #print(softmax_derivative.shape)
-                        #print(softmax_derivative)
-                        nabla_mu = np.einsum("olj->oj", softmax_derivative) / self.n_mc_samples
-                        #print(nabla_mu.shape) #oj
-                        #print(nabla_mu)
+                        softmax_derivative = np.einsum("olj,ol->olj", x_eta,
+                                                       (eta_sum - obs_eta))
+                        softmax_derivative = np.einsum("olj->jol",
+                                                       softmax_derivative) / \
+                                             eta_sum**2
+                        softmax_derivative = np.einsum("jol->olj",
+                                                       softmax_derivative)
+
+                        nabla_mu = np.einsum("olj->oj", softmax_derivative) / \
+                                   self.n_mc_samples
+
                         r_jc = r[:,:,:,obs_class]
                         #print(r_jc.shape)
-                        nabla_sigma = np.einsum("olj->oj", softmax_derivative * r_jc) / self.n_mc_samples
-                        #print(nabla_sigma.shape) #oj
-                        # Update parameters
-                        self.mu[:,obs_class] += self.lr_mu * np.einsum("jo->j", (nabla_mu.T / marginal))
-                        self.sigma[:,obs_class] += self.lr_sigma * np.einsum("jo->j",(nabla_sigma.T / marginal))
+                        nabla_sigma = np.einsum("olj->oj",
+                                                softmax_derivative * r_jc) / \
+                                      self.n_mc_samples
+
+                        self.mu[:,obs_class] += self.lr_mu * \
+                                                np.einsum("jo->j",
+                                                          (nabla_mu.T / marginal))
+                        self.sigma[:,obs_class] += self.lr_sigma * \
+                                                   np.einsum("jo->j",
+                                                             (nabla_sigma.T / marginal))
                         
 
                     except TypeError as e:
@@ -270,7 +264,6 @@ class FIRES:
 
         for epoch in range(self.epochs):
             # Shuffle the observations
-            # problem if only one is given, handle later try catch or so
             try:
                 n_obs = len(y)
                 random_idx = np.random.permutation(len(y))
@@ -284,29 +277,24 @@ class FIRES:
             try:
                 # has shape o: observations, l: samples, j: features
                 r = np.random.randn(n_obs, self.n_mc_samples, self.n_total_ftr)
-                #print("R shape: {}".format(r.shape))
-                # calculate thetas for all samples and observations
+
                 theta = np.einsum("olj,j->olj", r, self.sigma) + self.mu
 
-                # calculate marginal likelihood shape o
                 marginal = np.einsum("olj,oj->olj", theta, x)  # theta *x
-                # sum over l and j / n_mc_samples
                 marginal = np.einsum("olj->o", marginal) / self.n_mc_samples
-                #print("Marginal shape: {}".format(marginal.shape))
 
                 # calculate derivatives
-                nabla_mu = x  # shape oxj
-                # 'ij->i' sum over all rows
+                nabla_mu = x
+                
                 nabla_sigma = x * (np.einsum("olj->oj", r) /
-                                   self.n_mc_samples)  # shape oxj
+                                   self.n_mc_samples)  
 
                 # update mu and sigma
                 self.mu += self.lr_mu * np.mean(nabla_mu.T / marginal, axis=1)
                 self.sigma += self.lr_sigma * \
                     np.mean(nabla_sigma.T / marginal, axis=1)
-            except:
-                #TODO: handle errors
-                print('failed')
+            except TypeError as e:
+                raise TypeError('All features must be a numeric data type.') from e
 
     '''
     # ### ADD YOUR OWN MODEL HERE #################################################
