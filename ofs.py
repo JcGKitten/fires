@@ -87,11 +87,8 @@ class MC_OFS:
         :type y: int
         """        
         predictions = np.dot(self.w, x)
-        print("Predictions: {}".format(predictions))
         prediction = np.where(predictions == np.amax(predictions))[0][0]
-        print("Prediction: {}, class: {}".format(prediction, y))
         if y != prediction:
-            print("{} \n {}".format(self.w[prediction], self.w[y]))
             #reduce wrong
             w_tilde = (1-self.regularization_param * self.step_size) * \
                        self.w[prediction] - self.step_size  * x

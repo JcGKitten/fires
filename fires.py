@@ -6,7 +6,7 @@ from sklearn.preprocessing import MinMaxScaler
 
 class FIRES:
     def __init__(self, n_total_ftr, target_values, mu_init=0, sigma_init=1, penalty_s=0.01, penalty_r=0.01, epochs=1,
-                 lr_mu=0.01, lr_sigma=0.01, scale_weights=True, model='probit', number_monte_carlo_samples=10000,
+                 lr_mu=0.01, lr_sigma=0.01, scale_weights=True, model='probit', number_monte_carlo_samples=100,
                  class_probabilities=None):
         """
         FIRES: Fast, Interpretable and Robust Evaluation and Selection of features

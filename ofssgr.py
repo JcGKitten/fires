@@ -121,9 +121,8 @@ class MC_OFSSGD:
 
     def __ola(self, x, y):
         predictions = np.dot(self.W, x)
-        print("Predictions: {}".format(predictions))
         prediction = np.where(predictions == np.amax(predictions))[0][0]
-        print("Prediction: {}, class: {}".format(prediction, y))
+        
         if y != prediction:
             #print("{} \n {}".format(self.W[prediction], self.W[y]))
             #reduce wrong
@@ -175,7 +174,7 @@ class MC_OFSSGD:
         # calling it now from __ola to get the updated vectors
         # self.__SGr()
             
-    def get_weights(self):
+    def get_feature_indices(self):
         """Returns all features, which weights aren't reduced to zero
 
         :return: Array of feature indices
