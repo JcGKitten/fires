@@ -6,8 +6,8 @@ from sklearn.preprocessing import MinMaxScaler
 try:
     import cupy as cp
     cupy_available = True
-except ImportError:
-    Warning("Cupy couldn't be imported, so using FIRES with Multiclass can be slow.")
+except ModuleNotFoundError:
+    warn("Cupy couldn't be imported, so using FIRES with Multiclass can be slow.")
     cupy_available = False
 
 
