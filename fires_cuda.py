@@ -226,8 +226,8 @@ class FIRES:
                         theta = (r * self.sigma + self.mu)
                         
                         # get d for preventig exploding gradients
-                        d = self.__get_d(theta)
-
+                        d = 10**(-cp.floor(cp.log10(cp.max(theta))))
+                        
                         # eta shape: oxlxc
                         # multiply all ftr_cols with given ftr_vector x
                         eta = d * cp.einsum("oljc,oj->oljc", theta, x_obs) 
@@ -315,7 +315,7 @@ class FIRES:
                         theta = (r * self.sigma + self.mu)
                         
                         # get d for preventig exploding gradients
-                        d = self.__get_d(theta)
+                        d = 10**(-np.floor(np.log10(np.max(theta))))
 
                         # eta shape: oxlxc
                         # multiply all ftr_cols with given ftr_vector x
@@ -457,15 +457,3 @@ class FIRES:
             weights = MinMaxScaler().fit_transform(weights.reshape(-1, 1)).flatten()
 
         return weights
-    
-    def __get_d(self, theta):
-        """Helper function for softmax regression, calculates a factor d
-        which prevents the exponents to get to high.
-
-        param theta: (ndarray): Matrix of thetas, for which d is claculated
-        """
-        if type(theta) == cp.core.core.ndarray:
-            theta = cp.asnumpy(theta)       
-         
-        factor = -np.floor(np.log10(np.max(theta)))
-        return(10**factor)
