@@ -24,7 +24,7 @@ class FIRES:
         August 23–27, 2020, Virtual Event, CA, USA.
 
         :param n_total_ftr: (int) Total no. of features
-        :param target_values: (np.ndarray) Unique target values (class labels)
+        :param target_values: (np.ndarray) Unique target values (class labels) or None for regression
         :param mu_init: (int/np.ndarray) Initial importance parameter
         :param sigma_init: (int/np.ndarray) Initial uncertainty parameter
         :param penalty_s: (float) Penalty factor for the uncertainty (corresponds to gamma_s in the paper)
