@@ -3,6 +3,13 @@ from warnings import warn
 from scipy.stats import norm
 from sklearn.preprocessing import MinMaxScaler
 
+try:
+    import cupy as cp
+    cupy_available = True
+except ModuleNotFoundError:
+    warn("Cupy couldn't be imported, so using FIRES with Multiclass can be slow.")
+    cupy_available = False
+
 
 class FIRES:
     def __init__(self, n_total_ftr, target_values, mu_init=0, sigma_init=1, penalty_s=0.01, penalty_r=0.01, epochs=1,
@@ -17,7 +24,7 @@ class FIRES:
         August 23–27, 2020, Virtual Event, CA, USA.
 
         :param n_total_ftr: (int) Total no. of features
-        :param target_values: (np.ndarray) Unique target values (class labels)
+        :param target_values: (np.ndarray) Unique target values (class labels) or None for regression
         :param mu_init: (int/np.ndarray) Initial importance parameter
         :param sigma_init: (int/np.ndarray) Initial uncertainty parameter
         :param penalty_s: (float) Penalty factor for the uncertainty (corresponds to gamma_s in the paper)
@@ -60,21 +67,41 @@ class FIRES:
 
         # Multinominal logit (softmax) model
         if self.model == 'softmax':
-            self.model_param["n_classes"] = len(target_values)
-            # maybe check for scale of mu init
-            self.mu = np.ones(
-                (n_total_ftr, self.model_param["n_classes"]))*mu_init
-            self.sigma = np.ones(
-                (n_total_ftr, self.model_param["n_classes"]))*sigma_init
-            if class_probabilities != None:
-                if sum(class_probabilities) != 1:
-                    raise ValueError("Class probs don't sum up to 1")
-                elif len(class_probabilities) != self.model_param["n_classes"]:
-                    raise Exception(
-                        "Length of target_values and class_probilities don't match")
-                else:
-                    self.model_param["class_probs"] = True
-                    self.class_probabilities = class_probabilities
+            if cupy_available:
+
+                self.model_param["n_classes"] = len(target_values)
+                # maybe check for scale of mu init
+                self.mu = cp.ones(
+                    (n_total_ftr, self.model_param["n_classes"]))*mu_init
+                self.sigma = cp.ones(
+                    (n_total_ftr, self.model_param["n_classes"]))*sigma_init
+                if class_probabilities != None:
+                    if sum(class_probabilities) != 1:
+                        raise ValueError("Class probs don't sum up to 1")
+                    elif len(class_probabilities) != self.model_param["n_classes"]:
+                        raise Exception(
+                            "Length of target_values and class_probilities don't match")
+                    else:
+                        self.model_param["class_probs"] = True
+                        self.class_probabilities = class_probabilities
+            else:
+                warn("Without Cupy the softmax function can be very slow")
+                self.model_param["n_classes"] = len(target_values)
+                # maybe check for scale of mu init
+                self.mu = np.ones(
+                    (n_total_ftr, self.model_param["n_classes"]))*mu_init
+                self.sigma = np.ones(
+                    (n_total_ftr, self.model_param["n_classes"]))*sigma_init
+                if class_probabilities != None:
+                    if sum(class_probabilities) != 1:
+                        raise ValueError("Class probs don't sum up to 1")
+                    elif len(class_probabilities) != self.model_param["n_classes"]:
+                        raise Exception(
+                            "Length of target_values and class_probilities don't match")
+                    else:
+                        self.model_param["class_probs"] = True
+                        self.class_probabilities = class_probabilities
+                
         if self.model == "regression":
             self.mu = np.ones(n_total_ftr) * mu_init
             self.sigma = np.ones(n_total_ftr) * sigma_init
@@ -97,7 +124,10 @@ class FIRES:
         if self.model == 'probit':
             self.__probit(x, y)
         elif self.model == 'softmax':
-            self.__softmax(x, y)
+            if cupy_available:
+                self.__softmax_cp(x, y)
+            else:
+                self.__softmax_np(x, y)
         elif self.model == "regression":
             self.__regression(x, y)
         # ### ADD YOUR OWN MODEL HERE ##################################################
@@ -159,11 +189,11 @@ class FIRES:
                 raise TypeError(
                     'All features must be a numeric data type.') from e
 
-    def __softmax(self, x, y):
+    def __softmax_cp(self, x, y):
         """
         Update the distribution parameters mu and sigma by optimizing them in terms of the (log) likelihood.
         Here we assume a multinominal distributed target variable. We use a Multinominal model as our base model.
-
+        Funciton with cupy functions.
 
         :param x: (np.ndarray) Batch of observations (numeric values only, consider normalizing data for better results)
         :param y: (np.ndarray) Batch of labels: type integer e.g. 0,1,2,3,4 etc.
@@ -176,7 +206,96 @@ class FIRES:
 
         for obs_class in observed_classes:
             observations_index = np.where(y == obs_class)[0]
-            x_obs = x[observations_index]
+            x_obs = cp.array(x[observations_index])
+            n_obs = len(x_obs)
+            #print("obs_class: {}, n obs: {}".format(obs_class, n_obs))
+
+            for epoch in range(self.epochs):
+                    
+                    # Iterative update of mu and sigma
+                    try:
+                        # o number of obs, l number of samples, j features,
+                        # c classes
+                        
+                        # r shape: oxlxjxc
+                        r = cp.random.randn(n_obs, self.n_mc_samples,
+                                            self.n_total_ftr,
+                                            self.model_param["n_classes"])
+
+                        # theta shape: oxlxjxc
+                        theta = (r * self.sigma + self.mu)
+                        
+                        # get d for preventig exploding gradients
+                        d = 10**(-cp.floor(cp.log10(cp.max(theta))))
+                        
+                        # eta shape: oxlxc
+                        # multiply all ftr_cols with given ftr_vector x
+                        eta = d * cp.einsum("oljc,oj->oljc", theta, x_obs) 
+                        # sum up all theta^cl_j * x_tj so we got l samples
+                        # for all c classes
+                        eta = cp.einsum("oljc->olc", eta) 
+                        eta = cp.exp(eta) # we only need them exp
+
+                        # eta_sum shape: oxl
+                        eta_sum = cp.einsum("olc->ol", eta)
+                        
+                        # calculate softmax only for observed class
+                        # obs_eta shape: oxl
+                        obs_eta = eta[:,:,obs_class]
+                        
+                        # softmax_lh shape: oxl
+                        softmax_lh = obs_eta / eta_sum # 
+                        
+                        # marginal shape: o
+                        marginal = cp.einsum("ol->o", softmax_lh) / \
+                                   self.n_mc_samples
+
+
+                        # calculate softmax derivative to theta
+                        softmax_derivative = cp.einsum("oj,ol->olj",
+                                                      (d*x_obs), softmax_lh)
+                        
+                        softmax_derivative = cp.einsum("olj,ol->olj",
+                                                       softmax_derivative,
+                                                       (1-softmax_lh))
+
+                        nabla_mu = cp.einsum("olj->oj", softmax_derivative) / \
+                                   self.n_mc_samples
+
+                        r_jc = r[:,:,:,obs_class]
+                        #print(r_jc.shape)
+                        nabla_sigma = cp.einsum("olj->oj",
+                                                softmax_derivative * r_jc) / \
+                                      self.n_mc_samples
+
+                        self.mu[:,obs_class] += self.lr_mu * \
+                                                cp.einsum("jo->j",
+                                                          (nabla_mu.T / marginal))
+                        self.sigma[:,obs_class] += self.lr_sigma * \
+                                                   cp.einsum("jo->j",
+                                                             (nabla_sigma.T / marginal))
+
+                    except TypeError as e:
+                            raise TypeError('All features must be a numeric data type.') from e
+
+    def __softmax_np(self, x, y):
+        """
+        Update the distribution parameters mu and sigma by optimizing them in terms of the (log) likelihood.
+        Here we assume a multinominal distributed target variable. We use a Multinominal model as our base model.
+        This is the function which is used if cupy isn't installed, not recommended!
+
+        :param x: (np.ndarray) Batch of observations (numeric values only, consider normalizing data for better results)
+        :param y: (np.ndarray) Batch of labels: type integer e.g. 0,1,2,3,4 etc.
+        """
+        
+        if len(x.shape) != 2:
+            x = x.reshape(1,len(x))
+    
+        observed_classes = np.unique(y)
+
+        for obs_class in observed_classes:
+            observations_index = np.where(y == obs_class)[0]
+            x_obs = np.array(x[observations_index])
             n_obs = len(x_obs)
             #print("obs_class: {}, n obs: {}".format(obs_class, n_obs))
 
@@ -193,15 +312,17 @@ class FIRES:
                                             self.model_param["n_classes"])
 
                         # theta shape: oxlxjxc
-                        theta = r * self.sigma + self.mu
+                        theta = (r * self.sigma + self.mu)
+                        
+                        # get d for preventig exploding gradients
+                        d = 10**(-np.floor(np.log10(np.max(theta))))
 
                         # eta shape: oxlxc
                         # multiply all ftr_cols with given ftr_vector x
-                        eta = np.einsum("oljc,oj->oljc", theta, x_obs) 
+                        eta = d * np.einsum("oljc,oj->oljc", theta, x_obs) 
                         # sum up all theta^cl_j * x_tj so we got l samples
                         # for all c classes
                         eta = np.einsum("oljc->olc", eta) 
-                        
                         eta = np.exp(eta) # we only need them exp
 
                         # eta_sum shape: oxl
@@ -218,20 +339,13 @@ class FIRES:
                         marginal = np.einsum("ol->o", softmax_lh) / \
                                    self.n_mc_samples
 
-
                         # calculate softmax derivative to theta
+                        softmax_derivative = np.einsum("oj,ol->olj",
+                                                      (d*x_obs), softmax_lh)
                         
-                        # x_eta shape: oxlxj
-                        x_eta = np.einsum("oj,ol->olj", x_obs, obs_eta)
-                        
-
-                        softmax_derivative = np.einsum("olj,ol->olj", x_eta,
-                                                       (eta_sum - obs_eta))
-                        softmax_derivative = np.einsum("olj->jol",
-                                                       softmax_derivative) / \
-                                             eta_sum**2
-                        softmax_derivative = np.einsum("jol->olj",
-                                                       softmax_derivative)
+                        softmax_derivative = np.einsum("olj,ol->olj",
+                                                       softmax_derivative,
+                                                       (1-softmax_lh))
 
                         nabla_mu = np.einsum("olj->oj", softmax_derivative) / \
                                    self.n_mc_samples
@@ -248,7 +362,6 @@ class FIRES:
                         self.sigma[:,obs_class] += self.lr_sigma * \
                                                    np.einsum("jo->j",
                                                              (nabla_sigma.T / marginal))
-                        
 
                     except TypeError as e:
                             raise TypeError('All features must be a numeric data type.') from e
@@ -322,7 +435,13 @@ class FIRES:
         :return: feature weights
         :rtype np.ndarray
         """
-        mu, sigma = self.mu, self.sigma
+
+        if type(self.mu) == cp.core.core.ndarray:
+            mu = cp.asnumpy(self.mu)
+            sigma = cp.asnumpy(self.sigma)
+        else:
+            mu, sigma = self.mu, self.sigma
+
         if len(mu.shape) == 2:  # multinominal case
             if "class_probs" in self.model_param:
                 mu = np.sum(mu * self.class_probabilities, axis=1)
@@ -338,4 +457,3 @@ class FIRES:
             weights = MinMaxScaler().fit_transform(weights.reshape(-1, 1)).flatten()
 
         return weights
-    
