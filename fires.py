@@ -225,15 +225,17 @@ class FIRES:
                         # theta shape: oxlxjxc
                         theta = (r * self.sigma + self.mu)
                         
-                        # get d for preventig exploding gradients
-                        d = 10**(-cp.floor(cp.log10(cp.max(theta))))
-                        
+
                         # eta shape: oxlxc
                         # multiply all ftr_cols with given ftr_vector x
-                        eta = d * cp.einsum("oljc,oj->oljc", theta, x_obs) 
+                        eta = cp.einsum("oljc,oj->oljc", theta, x_obs) 
+                        
+                        # get d for preventig exploding gradients
+                        d = 10**(-cp.floor(cp.log10(cp.max(eta))))
+                         
                         # sum up all theta^cl_j * x_tj so we got l samples
                         # for all c classes
-                        eta = cp.einsum("oljc->olc", eta) 
+                        eta = d * cp.einsum("oljc->olc", eta) 
                         eta = cp.exp(eta) # we only need them exp
 
                         # eta_sum shape: oxl
@@ -319,10 +321,13 @@ class FIRES:
 
                         # eta shape: oxlxc
                         # multiply all ftr_cols with given ftr_vector x
-                        eta = d * np.einsum("oljc,oj->oljc", theta, x_obs) 
+                        eta = np.einsum("oljc,oj->oljc", theta, x_obs) 
+                        
+                        # get d for preventig exploding gradients
+                        d = 10**(-np.floor(np.log10(np.max(eta))))
                         # sum up all theta^cl_j * x_tj so we got l samples
                         # for all c classes
-                        eta = np.einsum("oljc->olc", eta) 
+                        eta = d * np.einsum("oljc->olc", eta) 
                         eta = np.exp(eta) # we only need them exp
 
                         # eta_sum shape: oxl
