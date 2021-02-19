@@ -111,12 +111,19 @@ class MC_OFS:
         w[indices] = weights_array[indices]
         return w
 
-    def get_feature_indices(self):
+    def get_feature_indices(self, return_weights=False):
         """Returns the indices of the selceted features, based on all features
         given.
 
+        :param return_weights: shall alse the weights be returned
+        :param return_weights: boolean
+        
         :return: Array with feature indices
         :rtype: np.ndarray
         """        
         w_mean = np.mean(self.w, axis=0)
-        return np.argsort(w_mean)[::-1][:self.n_selected_ftr - 1]
+        feature_indices = np.argsort(w_mean)[::-1][:self.n_selected_ftr - 1]
+        if return_weights:
+            return (feature_indices, w_mean)
+        else:
+            return feature_indices
