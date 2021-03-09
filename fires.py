@@ -255,7 +255,7 @@ class FIRES:
 
                         # calculate softmax derivative to theta
                         softmax_derivative = cp.einsum("oj,ol->olj",
-                                                      (d*x_obs), softmax_lh)
+                                                      x_obs, softmax_lh)
                         
                         softmax_derivative = cp.einsum("olj,ol->olj",
                                                        softmax_derivative,

@@ -49,7 +49,7 @@ class FIRES:
         self.scale_weights = scale_weights
         self.model = model
         self.n_mc_samples = number_monte_carlo_samples
-
+        
         # Additional model-specific parameters
         self.model_param = {}
 
