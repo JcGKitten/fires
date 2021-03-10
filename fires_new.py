@@ -277,10 +277,8 @@ class FIRES:
                         nabla_mu = cp.einsum("oljc->ojc", softmax_derivative) /\
                                    self.n_mc_samples
 
-                        r_jc = r[:,:,:,obs_class]
-                        #print(r_jc.shape)
-                        nabla_sigma = cp.einsum("oljc,olj->ojc",
-                                                softmax_derivative,r_jc) / \
+                        nabla_sigma = cp.einsum("oljc,oljc->ojc",
+                                                softmax_derivative,r) / \
                                       self.n_mc_samples
 
                         nabla_mu = cp.einsum("ojc->jco", nabla_mu)
