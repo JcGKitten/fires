@@ -49,7 +49,7 @@ class FIRES:
         self.scale_weights = scale_weights
         self.model = model
         self.n_mc_samples = number_monte_carlo_samples
-
+        
         # Additional model-specific parameters
         self.model_param = {}
 
@@ -208,7 +208,6 @@ class FIRES:
             observations_index = np.where(y == obs_class)[0]
             x_obs = cp.array(x[observations_index])
             n_obs = len(x_obs)
-            #print("obs_class: {}, n obs: {}".format(obs_class, n_obs))
 
             for epoch in range(self.epochs):
                     
@@ -224,58 +223,75 @@ class FIRES:
 
                         # theta shape: oxlxjxc
                         theta = (r * self.sigma + self.mu)
-                        
 
                         # eta shape: oxlxc
                         # multiply all ftr_cols with given ftr_vector x
                         eta = cp.einsum("oljc,oj->oljc", theta, x_obs) 
-                        
-                        # get d for preventig exploding gradients
-                        d = 10**(-cp.floor(cp.log10(cp.max(eta))))
-                         
+
                         # sum up all theta^cl_j * x_tj so we got l samples
                         # for all c classes
-                        eta = d * cp.einsum("oljc->olc", eta) 
-                        eta = cp.exp(eta) # we only need them exp
+                        eta = cp.einsum("oljc->olc", eta) 
+
+                        # get a for numerical stability, shape oxl
+                        a = cp.amax(eta, axis=2) * -1
+
+                        eta = cp.einsum("olc->col", eta) + a
+                        eta = cp.einsum("col->olc", eta)
+                        
+                        # final eta with a and exponential
+                        eta = cp.exp(eta) 
 
                         # eta_sum shape: oxl
                         eta_sum = cp.einsum("olc->ol", eta)
                         
-                        # calculate softmax only for observed class
-                        # obs_eta shape: oxl
-                        obs_eta = eta[:,:,obs_class]
-                        
-                        # softmax_lh shape: oxl
-                        softmax_lh = obs_eta / eta_sum # 
+                        # calculate softmax(k, ...) for all classes k
+                        # divide all etas by eta_sum
+                        softmax_all = np.einsum("olc,ol->olc", eta, (1/eta_sum))
                         
                         # marginal shape: o
-                        marginal = cp.einsum("ol->o", softmax_lh) / \
+                        marginal = cp.einsum("ol->o",
+                                             softmax_all[:,:,obs_class]) / \
                                    self.n_mc_samples
 
 
-                        # calculate softmax derivative to theta
-                        softmax_derivative = cp.einsum("oj,ol->olj",
-                                                      x_obs, softmax_lh)
+                        # calculate softmax derivative to theta:
+
+                        softmax_c = softmax_all[:,:,obs_class]
+
+                        # first calculate derivative for all as k != c
+                        softmax_derivative = -1 * cp.einsum("oj,ol,olc->oljc",
+                                                            (x_obs),
+                                                            softmax_c,
+                                                            softmax_all)
+
+                        # then for observed class c
+                        softmax_derivative_c = cp.einsum("oj,ol,ol->olj",
+                                                         x_obs,
+                                                         softmax_c,
+                                                         (1-softmax_c))
+
+                        softmax_derivative[:,:,:,obs_class] = \
+                            softmax_derivative_c
                         
-                        softmax_derivative = cp.einsum("olj,ol->olj",
-                                                       softmax_derivative,
-                                                       (1-softmax_lh))
+                        
 
-                        nabla_mu = cp.einsum("olj->oj", softmax_derivative) / \
+                        nabla_mu = cp.einsum("oljc->ojc", softmax_derivative) /\
                                    self.n_mc_samples
 
-                        r_jc = r[:,:,:,obs_class]
-                        #print(r_jc.shape)
-                        nabla_sigma = cp.einsum("olj->oj",
-                                                softmax_derivative * r_jc) / \
+                        nabla_sigma = cp.einsum("oljc,oljc->ojc",
+                                                softmax_derivative,r) / \
                                       self.n_mc_samples
 
-                        self.mu[:,obs_class] += self.lr_mu * \
-                                                cp.einsum("jo->j",
-                                                          (nabla_mu.T / marginal))
-                        self.sigma[:,obs_class] += self.lr_sigma * \
-                                                   cp.einsum("jo->j",
-                                                             (nabla_sigma.T / marginal))
+                        nabla_mu = cp.einsum("ojc->jco", nabla_mu)
+                        self.mu += self.lr_mu * \
+                                                cp.einsum("jco->jc",
+                                                          (nabla_mu/ marginal))
+
+                        nabla_sigma = cp.einsum("ojc->jco", nabla_sigma)
+                        self.sigma += self.lr_sigma * \
+                                                   cp.einsum("jco->jc",
+                                                             (nabla_sigma / 
+                                                             marginal))
 
                     except TypeError as e:
                             raise TypeError('All features must be a numeric data type.') from e
@@ -315,58 +331,75 @@ class FIRES:
 
                         # theta shape: oxlxjxc
                         theta = (r * self.sigma + self.mu)
-                        
-                        # get d for preventig exploding gradients
-                        d = 10**(-np.floor(np.log10(np.max(theta))))
 
                         # eta shape: oxlxc
                         # multiply all ftr_cols with given ftr_vector x
                         eta = np.einsum("oljc,oj->oljc", theta, x_obs) 
-                        
-                        # get d for preventig exploding gradients
-                        d = 10**(-np.floor(np.log10(np.max(eta))))
+
                         # sum up all theta^cl_j * x_tj so we got l samples
                         # for all c classes
-                        eta = d * np.einsum("oljc->olc", eta) 
-                        eta = np.exp(eta) # we only need them exp
+                        eta = np.einsum("oljc->olc", eta) 
+
+                        # get a for numerical stability, shape oxl
+                        a = np.amax(eta, axis=2) * -1
+
+                        eta = np.einsum("olc->col", eta) + a
+                        eta = np.einsum("col->olc", eta)
+                        
+                        # final eta with a and exponential
+                        eta = np.exp(eta) 
 
                         # eta_sum shape: oxl
                         eta_sum = np.einsum("olc->ol", eta)
                         
-                        # calculate softmax only for observed class
-                        # obs_eta shape: oxl
-                        obs_eta = eta[:,:,obs_class]
-                        
-                        # softmax_lh shape: oxl
-                        softmax_lh = obs_eta / eta_sum # 
+                        # calculate softmax(k, ...) for all classes k
+                        # divide all etas by eta_sum
+                        softmax_all = np.einsum("olc,ol->olc", eta, (1/eta_sum))
                         
                         # marginal shape: o
-                        marginal = np.einsum("ol->o", softmax_lh) / \
+                        marginal = np.einsum("ol->o",
+                                             softmax_all[:,:,obs_class]) / \
                                    self.n_mc_samples
 
-                        # calculate softmax derivative to theta
-                        softmax_derivative = np.einsum("oj,ol->olj",
-                                                      (d*x_obs), softmax_lh)
+
+                        # calculate softmax derivative to theta:
+
+                        softmax_c = softmax_all[:,:,obs_class]
+
+                        # first calculate derivative for all as k != c
+                        softmax_derivative = -1 * np.einsum("oj,ol,olc->oljc",
+                                                            (x_obs),
+                                                            softmax_c,
+                                                            softmax_all)
+
+                        # then for observed class c
+                        softmax_derivative_c = np.einsum("oj,ol,ol->olj",
+                                                         x_obs,
+                                                         softmax_c,
+                                                         (1-softmax_c))
+
+                        softmax_derivative[:,:,:,obs_class] = \
+                            softmax_derivative_c
                         
-                        softmax_derivative = np.einsum("olj,ol->olj",
-                                                       softmax_derivative,
-                                                       (1-softmax_lh))
+                        
 
-                        nabla_mu = np.einsum("olj->oj", softmax_derivative) / \
+                        nabla_mu = np.einsum("oljc->ojc", softmax_derivative) /\
                                    self.n_mc_samples
 
-                        r_jc = r[:,:,:,obs_class]
-                        #print(r_jc.shape)
-                        nabla_sigma = np.einsum("olj->oj",
-                                                softmax_derivative * r_jc) / \
+                        nabla_sigma = np.einsum("oljc,oljc->ojc",
+                                                softmax_derivative,r) / \
                                       self.n_mc_samples
 
-                        self.mu[:,obs_class] += self.lr_mu * \
-                                                np.einsum("jo->j",
-                                                          (nabla_mu.T / marginal))
-                        self.sigma[:,obs_class] += self.lr_sigma * \
-                                                   np.einsum("jo->j",
-                                                             (nabla_sigma.T / marginal))
+                        nabla_mu = np.einsum("ojc->jco", nabla_mu)
+                        self.mu += self.lr_mu * \
+                                                np.einsum("jco->jc",
+                                                          (nabla_mu/ marginal))
+
+                        nabla_sigma = np.einsum("ojc->jco", nabla_sigma)
+                        self.sigma += self.lr_sigma * \
+                                                   np.einsum("jco->jc",
+                                                             (nabla_sigma / 
+                                                             marginal))
 
                     except TypeError as e:
                             raise TypeError('All features must be a numeric data type.') from e
