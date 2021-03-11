@@ -238,13 +238,14 @@ class FIRES:
 
                         eta = cp.einsum("olc->col", eta) + a
                         eta = cp.einsum("col->olc", eta)
-
-                        eta = cp.exp(eta) # we only need them exp
+                        
+                        # final eta with a and exponential
+                        eta = cp.exp(eta) 
 
                         # eta_sum shape: oxl
                         eta_sum = cp.einsum("olc->ol", eta)
                         
-                        # calculate softmax only for all classes
+                        # calculate softmax(k, ...) for all classes k
                         # divide all etas by eta_sum
                         softmax_all = np.einsum("olc,ol->olc", eta, (1/eta_sum))
                         
@@ -254,7 +255,8 @@ class FIRES:
                                    self.n_mc_samples
 
 
-                        # calculate softmax derivative to theta
+                        # calculate softmax derivative to theta:
+
                         softmax_c = softmax_all[:,:,obs_class]
 
                         # first calculate derivative for all as k != c
