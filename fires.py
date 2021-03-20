@@ -226,14 +226,17 @@ class FIRES:
 
                         # eta shape: oxlxc
                         # multiply all ftr_cols with given ftr_vector x
-                        eta = cp.einsum("oljc,oj->oljc", theta, x_obs) 
+                        eta = cp.einsum("oljc,oj->oljc", theta, x_obs)
+                        
 
                         # sum up all theta^cl_j * x_tj so we got l samples
                         # for all c classes
                         eta = cp.einsum("oljc->olc", eta) 
+                        
 
                         # get a for numerical stability, shape oxl
                         a = cp.amax(eta, axis=2) * -1
+                        
 
                         eta = cp.einsum("olc->col", eta) + a
                         eta = cp.einsum("col->olc", eta)
