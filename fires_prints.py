@@ -1,4 +1,3 @@
-from copy import Error
 import numpy as np
 from warnings import warn
 from scipy.stats import norm
@@ -199,7 +198,7 @@ class FIRES:
         :param x: (np.ndarray) Batch of observations (numeric values only, consider normalizing data for better results)
         :param y: (np.ndarray) Batch of labels: type integer e.g. 0,1,2,3,4 etc.
         """
-
+        print("one call")
         if len(x.shape) != 2:
             x = x.reshape(1,len(x))
     
@@ -221,9 +220,13 @@ class FIRES:
                         r = cp.random.randn(n_obs, self.n_mc_samples,
                                             self.n_total_ftr,
                                             self.model_param["n_classes"])
-
+                        print("r shape{}".format(r.shape))
+                        print(cp.max(r))
+                        print(cp.min(r))
                         # theta shape: oxlxjxc
                         theta = (r * self.sigma + self.mu)
+                        print(cp.max(theta))
+                        print(cp.min(theta))
 
                         # eta shape: oxlxc
                         # multiply all ftr_cols with given ftr_vector x
@@ -237,25 +240,47 @@ class FIRES:
 
                         # get a for numerical stability, shape oxl
                         a = cp.amax(eta, axis=2) * -1
+                        print("a shape {}".format(a.shape))
+                        print(cp.max(a))
+                        print(cp.min(a))
 
                         eta = cp.einsum("olc->col", eta) + a
                         eta = cp.einsum("col->olc", eta)
-
+                        print(cp.max(eta))
+                        print(cp.min(eta))
+                        
                         # final eta with a and exponential
                         eta = cp.exp(eta) 
+                        print("exp eta:")
+                        print(cp.max(eta))
+                        print(cp.min(eta))
+                        print(eta[:,:,obs_class])
 
                         # eta_sum shape: oxl
                         eta_sum = cp.einsum("olc->ol", eta)
-
+                        print(eta_sum)
+                        
                         # calculate softmax(k, ...) for all classes k
                         # divide all etas by eta_sum
-                        softmax_all = cp.einsum("olc,ol->olc", eta, (1/eta_sum))
-
+                        softmax_all = np.einsum("olc,ol->olc", eta, (1/eta_sum))
+                        print("softmax_all")
+                        print(softmax_all.shape)
+                        print(cp.max(softmax_all))
+                        print(cp.min(softmax_all))
+                        print(cp.isnan(softmax_all).any())
+                        
+                        
+                        print(softmax_all[:,:,obs_class])
                         # marginal shape: o
                         marginal = cp.einsum("ol->o",
                                              softmax_all[:,:,obs_class]) / \
                                    self.n_mc_samples
-
+                        print("marginal")
+                        print(marginal.shape)
+                        print(cp.max(marginal))
+                        print(cp.min(marginal))
+                        print(cp.isnan(marginal).any())
+                        
                         # calculate softmax derivative to theta:
 
                         softmax_c = softmax_all[:,:,obs_class]
@@ -274,27 +299,53 @@ class FIRES:
 
                         softmax_derivative[:,:,:,obs_class] = \
                             softmax_derivative_c
+                        print("softmax_derivative")
+                        print(softmax_derivative.shape)
+                        print(cp.max(softmax_derivative))
+                        print(cp.min(softmax_derivative))
+                        print(cp.isnan(softmax_derivative).any())
+                        
 
                         nabla_mu = cp.einsum("oljc->ojc", softmax_derivative) /\
                                    self.n_mc_samples
+                        print("nabla_mu")
+                        print(nabla_mu.shape)
+                        print(cp.max(nabla_mu))
+                        print(cp.min(nabla_mu))
+                        print(cp.isnan(nabla_mu).any())
 
                         nabla_sigma = cp.einsum("oljc,oljc->ojc",
                                                 softmax_derivative,r) / \
                                       self.n_mc_samples
+                        print("nabla_sigma")
+                        print(nabla_sigma.shape)
+                        print(cp.max(nabla_sigma))
+                        print(cp.min(nabla_sigma))
+                        print(cp.isnan(nabla_sigma).any())
 
                         nabla_mu = cp.einsum("ojc->jco", nabla_mu)
-
+                        print("nabla_mu")
+                        print(nabla_mu.shape)
+                        print(cp.max(nabla_mu))
+                        print(cp.min(nabla_mu))
+                        print(cp.isnan(nabla_mu).any())
                         self.mu += self.lr_mu * \
                                                 cp.einsum("jco->jc",
                                                           (nabla_mu/ marginal))
 
                         nabla_sigma = cp.einsum("ojc->jco", nabla_sigma)
-
+                        print("nabla_sigma")
+                        print(nabla_sigma.shape)
+                        print(cp.max(nabla_sigma))
+                        print(cp.min(nabla_sigma))
+                        print(cp.isnan(nabla_sigma).any())
                         self.sigma += self.lr_sigma * \
                                                    cp.einsum("jco->jc",
                                                              (nabla_sigma / 
                                                              marginal))
-
+                                                   
+                        print(cp.max(self.mu))
+                        print(cp.max(self.sigma))
 
                     except TypeError as e:
                             raise TypeError('All features must be a numeric data type.') from e
