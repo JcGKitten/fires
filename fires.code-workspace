@@ -5,6 +5,7 @@
 		}
 	],
 	"settings": {
-		"jupyter.jupyterServerType": "local"
+		"jupyter.jupyterServerType": "local",
+		"python.pythonPath": "/home/kitten/anaconda3/envs/FIRES/bin/python"
 	}
 }
