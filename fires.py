@@ -295,6 +295,8 @@ class FIRES:
                                    self.n_mc_samples
                         nabla_mu = cp.einsum("ojc->jco", nabla_mu)
                         nabla_mu = cp.einsum("jco->jc", (nabla_mu / marginal))
+                        # ! reduzing the update size reduces the quality of the feature set
+                        # ! so higher learning rates are required which leads to the former problem
                         #nabla_mu = nabla_mu / batch_size
                         self.mu += self.lr_mu * nabla_mu
 
