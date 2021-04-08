@@ -199,6 +199,8 @@ class FIRES:
         :param y: (np.ndarray) Batch of labels: type integer e.g. 0,1,2,3,4 etc.
         """
         print("one call")
+        batch_size = len(y)
+        print(batch_size)
         if len(x.shape) != 2:
             x = x.reshape(1,len(x))
     
@@ -208,6 +210,7 @@ class FIRES:
             observations_index = np.where(y == obs_class)[0]
             x_obs = cp.array(x[observations_index])
             n_obs = len(x_obs)
+            print("For class {} there are {} obs".format(obs_class, n_obs))
 
             for epoch in range(self.epochs):
                     
@@ -225,6 +228,7 @@ class FIRES:
                         print(cp.min(r))
                         # theta shape: oxlxjxc
                         theta = (r * self.sigma + self.mu)
+                        print("theta:")
                         print(cp.max(theta))
                         print(cp.min(theta))
 
@@ -236,16 +240,36 @@ class FIRES:
                         # sum up all theta^cl_j * x_tj so we got l samples
                         # for all c classes
                         eta = cp.einsum("oljc->olc", eta) 
+                        print("theta times x")
+                        print(eta.shape)
+                        print(cp.max(eta))
+                        print(cp.min(eta))
+                        print(cp.min(cp.amax(eta, axis=2)))
                         
 
                         # get a for numerical stability, shape oxl
                         a = cp.amax(eta, axis=2) * -1
+                        print("mean:")
+                        test = cp.mean(eta, axis=2)
+                        print(test.shape)
+                        print(cp.max(test))
+                        print(cp.min(test))
+                        print("median:")
+                        test = cp.median(eta, axis=2)
+                        print(test.shape)
+                        print(cp.max(test))
+                        print(cp.min(test))
                         print("a shape {}".format(a.shape))
                         print(cp.max(a))
                         print(cp.min(a))
 
                         eta = cp.einsum("olc->col", eta) + a
                         eta = cp.einsum("col->olc", eta)
+                        print("eta:")
+                        #there should be a zero for each ???????
+                        print(eta.shape)
+                        #print(cp.amax(eta, axis=2))
+                        print(cp.any(cp.amax(eta, axis=2) != 0.0))
                         print(cp.max(eta))
                         print(cp.min(eta))
                         
@@ -254,11 +278,14 @@ class FIRES:
                         print("exp eta:")
                         print(cp.max(eta))
                         print(cp.min(eta))
-                        print(eta[:,:,obs_class])
+                        #print(eta[:,:,obs_class])
 
                         # eta_sum shape: oxl
                         eta_sum = cp.einsum("olc->ol", eta)
-                        print(eta_sum)
+                        print("eta_sum")
+                        print(eta_sum.shape)
+                        print(cp.max(eta_sum))
+                        print(cp.min(eta_sum))
                         
                         # calculate softmax(k, ...) for all classes k
                         # divide all etas by eta_sum
@@ -270,7 +297,7 @@ class FIRES:
                         print(cp.isnan(softmax_all).any())
                         
                         
-                        print(softmax_all[:,:,obs_class])
+                        print(softmax_all[:,:,obs_class].shape)
                         # marginal shape: o
                         marginal = cp.einsum("ol->o",
                                              softmax_all[:,:,obs_class]) / \
@@ -306,43 +333,23 @@ class FIRES:
                         print(cp.isnan(softmax_derivative).any())
                         
 
+                        
                         nabla_mu = cp.einsum("oljc->ojc", softmax_derivative) /\
                                    self.n_mc_samples
-                        print("nabla_mu")
-                        print(nabla_mu.shape)
-                        print(cp.max(nabla_mu))
-                        print(cp.min(nabla_mu))
-                        print(cp.isnan(nabla_mu).any())
+                        nabla_mu = cp.einsum("ojc->jco", nabla_mu)
+                        nabla_mu = cp.einsum("jco->jc", (nabla_mu / marginal))
+                        nabla_mu = nabla_mu / batch_size
+                        self.mu += self.lr_mu * nabla_mu
+
 
                         nabla_sigma = cp.einsum("oljc,oljc->ojc",
                                                 softmax_derivative,r) / \
                                       self.n_mc_samples
-                        print("nabla_sigma")
-                        print(nabla_sigma.shape)
-                        print(cp.max(nabla_sigma))
-                        print(cp.min(nabla_sigma))
-                        print(cp.isnan(nabla_sigma).any())
-
-                        nabla_mu = cp.einsum("ojc->jco", nabla_mu)
-                        print("nabla_mu")
-                        print(nabla_mu.shape)
-                        print(cp.max(nabla_mu))
-                        print(cp.min(nabla_mu))
-                        print(cp.isnan(nabla_mu).any())
-                        self.mu += self.lr_mu * \
-                                                cp.einsum("jco->jc",
-                                                          (nabla_mu/ marginal))
-
                         nabla_sigma = cp.einsum("ojc->jco", nabla_sigma)
-                        print("nabla_sigma")
-                        print(nabla_sigma.shape)
-                        print(cp.max(nabla_sigma))
-                        print(cp.min(nabla_sigma))
-                        print(cp.isnan(nabla_sigma).any())
-                        self.sigma += self.lr_sigma * \
-                                                   cp.einsum("jco->jc",
-                                                             (nabla_sigma / 
-                                                             marginal))
+                        nabla_sigma = cp.einsum("jco->jc", (nabla_sigma / marginal))
+                        nabla_sigma = nabla_sigma / batch_size
+
+                        self.sigma += self.lr_sigma * nabla_sigma
                                                    
                         print(cp.max(self.mu))
                         print(cp.max(self.sigma))

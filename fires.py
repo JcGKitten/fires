@@ -201,9 +201,12 @@ class FIRES:
         """
 
         if len(x.shape) != 2:
+            # reshape x so we got dim o = 1
             x = x.reshape(1,len(x))
     
         observed_classes = np.unique(y)
+
+        batch_size = len(y)
 
         for obs_class in observed_classes:
             observations_index = np.where(y == obs_class)[0]
@@ -256,6 +259,16 @@ class FIRES:
                                              softmax_all[:,:,obs_class]) / \
                                    self.n_mc_samples
 
+                        #TODO: Throw error when marginal is zero
+
+                        if 0 in marginal:
+                            msg = ("The marginal likelihood of class {} "
+                                   "reached 0. This will cause the feature "
+                                   "weights to become NaN. Try to normalize "
+                                   "your data or reduce learning rate."
+                                   ).format(obs_class)
+                            raise ValueError(msg)
+
                         # calculate softmax derivative to theta:
 
                         softmax_c = softmax_all[:,:,obs_class]
@@ -275,25 +288,24 @@ class FIRES:
                         softmax_derivative[:,:,:,obs_class] = \
                             softmax_derivative_c
 
+
+                        # calculate updates for mu and sigma
+
                         nabla_mu = cp.einsum("oljc->ojc", softmax_derivative) /\
                                    self.n_mc_samples
+                        nabla_mu = cp.einsum("ojc->jco", nabla_mu)
+                        nabla_mu = cp.einsum("jco->jc", (nabla_mu / marginal))
+                        #nabla_mu = nabla_mu / batch_size
+                        self.mu += self.lr_mu * nabla_mu
+
 
                         nabla_sigma = cp.einsum("oljc,oljc->ojc",
                                                 softmax_derivative,r) / \
                                       self.n_mc_samples
-
-                        nabla_mu = cp.einsum("ojc->jco", nabla_mu)
-
-                        self.mu += self.lr_mu * \
-                                                cp.einsum("jco->jc",
-                                                          (nabla_mu/ marginal))
-
                         nabla_sigma = cp.einsum("ojc->jco", nabla_sigma)
-
-                        self.sigma += self.lr_sigma * \
-                                                   cp.einsum("jco->jc",
-                                                             (nabla_sigma / 
-                                                             marginal))
+                        nabla_sigma = cp.einsum("jco->jc", (nabla_sigma / marginal))
+                        #nabla_sigma = nabla_sigma / batch_size
+                        self.sigma += self.lr_sigma * nabla_sigma
 
 
                     except TypeError as e:
@@ -309,6 +321,9 @@ class FIRES:
         :param y: (np.ndarray) Batch of labels: type integer e.g. 0,1,2,3,4 etc.
         """
         
+        batch_size = len(y)
+
+
         if len(x.shape) != 2:
             x = x.reshape(1,len(x))
     
@@ -354,6 +369,8 @@ class FIRES:
 
                         # eta_sum shape: oxl
                         eta_sum = np.einsum("olc->ol", eta)
+
+                        #TODO: Throw error when marginal is zero
                         
                         # calculate softmax(k, ...) for all classes k
                         # divide all etas by eta_sum
@@ -363,6 +380,14 @@ class FIRES:
                         marginal = np.einsum("ol->o",
                                              softmax_all[:,:,obs_class]) / \
                                    self.n_mc_samples
+                        
+                        if 0 in marginal:
+                            msg = ("The marginal likelihood of class {} "
+                                   "reached 0. This will cause the feature "
+                                   "weights to become NaN. Try to normalize "
+                                   "your data or reduce learning rate."
+                                   ).format(obs_class)
+                            raise ValueError(msg)
 
 
                         # calculate softmax derivative to theta:
@@ -385,24 +410,27 @@ class FIRES:
                             softmax_derivative_c
                         
                         
+                        # calculate updates for mu and sigma
 
                         nabla_mu = np.einsum("oljc->ojc", softmax_derivative) /\
                                    self.n_mc_samples
+                        nabla_mu = np.einsum("ojc->jco", nabla_mu)
+                        nabla_mu = np.einsum("jco->jc", (nabla_mu / marginal))
+                        #nabla_mu = nabla_mu / batch_size
+                        self.mu += self.lr_mu * nabla_mu
+
 
                         nabla_sigma = np.einsum("oljc,oljc->ojc",
                                                 softmax_derivative,r) / \
                                       self.n_mc_samples
-
-                        nabla_mu = np.einsum("ojc->jco", nabla_mu)
-                        self.mu += self.lr_mu * \
-                                                np.einsum("jco->jc",
-                                                          (nabla_mu/ marginal))
-
                         nabla_sigma = np.einsum("ojc->jco", nabla_sigma)
-                        self.sigma += self.lr_sigma * \
-                                                   np.einsum("jco->jc",
-                                                             (nabla_sigma / 
-                                                             marginal))
+                        nabla_sigma = np.einsum("jco->jc", 
+                                                (nabla_sigma / marginal))
+                        # ! reduzing the update size reduces the quality of the feature set
+                        # ! so higher learning rates are required which leads to the former problem
+                        #nabla_sigma = nabla_sigma / batch_size
+
+                        self.sigma += self.lr_sigma * nabla_sigma
 
                     except TypeError as e:
                             raise TypeError('All features must be a numeric data type.') from e
